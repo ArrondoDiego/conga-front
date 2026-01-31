@@ -47,7 +47,7 @@ function preloadImages() {
         });
     });
     images['_Dorso'] = new Image();
-    images['_Dorso'].src = `assets/_Dorso.png`;
+    images['_Dorso'].src = `assets/Dorso.png`;
     images['_Dorso'].onload = checkLoad;
 }
 
