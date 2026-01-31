@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>Chinchón Web Online</title>
+    <style>
+        body { background: #222; color: white; text-align: center; font-family: Arial; }
+        #gameCanvas { 
+            background: #228b22; 
+            border: 5px solid #555; 
+            border-radius: 15px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            cursor: pointer;
+        }
+        .status { margin: 10px; font-size: 1.2em; color: #ff0; }
+    </style>
+</head>
+<body>
+    <h1>Conga Online 1v1</h1>
+    <div id="status" class="status">In attesa di connessione...</div>
+    <canvas id="gameCanvas" width="1000" height="700"></canvas>
+
+    <script src="game.js"></script>
+</body>
+</html>
