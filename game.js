@@ -4,7 +4,7 @@ const ctx = canvas.getContext('2d');
 /** * CONFIGURAZIONE SERVER
  * Sostituisci il dominio qui sotto con quello fornito da Railway
  */
-const RAILWAY_DOMAIN = 'web-production-1a2e.up.railway.app/'; 
+const RAILWAY_DOMAIN = 'web-production-1a2e.up.railway.app'; 
 
 const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 const serverUrl = isLocal ? 'ws://localhost:5555' : `wss://${RAILWAY_DOMAIN}`;
