@@ -1,37 +1,60 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-/** * CONFIGURAZIONE SERVER
- * Sostituisci il dominio qui sotto con quello fornito da Railway
- */
+/** * SERVER CONFIGURATION */
 const RAILWAY_DOMAIN = 'web-production-1a2e.up.railway.app'; 
+// const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+// Ricordati di rimettere il link Railway quando carichi online!
+// const serverUrl = `wss://${RAILWAY_DOMAIN}`;
+const serverUrl = 'ws://localhost:5555';
 
-const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-const serverUrl = isLocal ? 'ws://localhost:5555' : `wss://${RAILWAY_DOMAIN}`;
-
-console.log(`Tentativo di connessione a: ${serverUrl}`);
 const socket = new WebSocket(serverUrl);
 
+// GAME STATE & ASSETS
 let gameState = null;
 let draggedCard = null;
 let offset = { x: 0, y: 0 };
 let mouse = { x: 0, y: 0 };
 const images = {};
 
-// Dimensioni Carte
-const CARD_W = 75; 
-const CARD_H = 126; 
+// VIRTUAL RESOLUTION
+const V_WIDTH = 900;
+const V_HEIGHT = 700;
+const CARD_W = 100; // Aumentate per mobile
+const CARD_H = 145; 
 
-// Mapping per i nomi dei file (Basato sulla tua cartella assets)
 const suitsMap = { 'Ori': 'Denari', 'Bastoni': 'Bastoni', 'Coppe': 'Coppe', 'Spade': 'Spade' };
 const valuesMap = { 'F': '08', 'C': '09', 'R': '10' };
 
+/**
+ * RESPONSIVE SCALING
+ */
+function resizeCanvas() {
+    const containerWidth = window.innerWidth;
+    const containerHeight = window.innerHeight;
+    const gameRatio = V_WIDTH / V_HEIGHT;
+    const screenRatio = containerWidth / containerHeight;
+
+    if (screenRatio > gameRatio) {
+        canvas.style.height = containerHeight + "px";
+        canvas.style.width = (containerHeight * gameRatio) + "px";
+    } else {
+        canvas.style.width = containerWidth + "px";
+        canvas.style.height = (containerWidth / gameRatio) + "px";
+    }
+}
+//window.addEventListener('resize', resizeCanvas);
+//window.addEventListener('load', resizeCanvas);
+//resizeCanvas();
+
+/**
+ * ASSET PRELOADING
+ */
 function preloadImages() {
     const suits = ['Bastoni', 'Coppe', 'Denari', 'Spade'];
     const values = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10'];
     let loaded = 0;
     const total = (suits.length * values.length) + 1;
-
     const checkLoad = () => { if (++loaded === total) renderLoop(); };
 
     suits.forEach(s => {
@@ -40,153 +63,177 @@ function preloadImages() {
             images[key] = new Image();
             images[key].src = `assets/${key}.png`;
             images[key].onload = checkLoad;
-            images[key].onerror = () => {
-                console.warn(`Immagine mancante: assets/${key}.png`);
-                checkLoad();
-            };
+            images[key].onerror = checkLoad;
         });
     });
     images['_Dorso'] = new Image();
-    images['_Dorso'].src = `assets/Dorso.png`;
+    images['_Dorso'].src = `assets/Dorso.png`; 
     images['_Dorso'].onload = checkLoad;
 }
 
-socket.onmessage = (event) => {
-    gameState = JSON.parse(event.data);
-};
+/**
+ * POSIZIONAMENTO CARTE (3 sopra, 4 sotto)
+ */
+function getCardHandPos(index) {
+    const startX = 180;  // Spostato per centrare nel 900x700
+    const startY = 380;  // Altezza riga superiore
+    const gapX = 130;
+    const gapY = 160;
 
-socket.onopen = () => console.log("Connesso al server con successo!");
-socket.onerror = (err) => console.error("Errore WebSocket:", err);
-socket.onclose = () => console.warn("Connessione chiusa.");
+    let row = index < 3 ? 0 : 1;
+    let col = index < 3 ? index : index - 3;
+    let offsetX = row === 0 ? 65 : 0; // Offset per centrare la riga da 3
 
+    return {
+        x: startX + (col * gapX) + offsetX,
+        y: startY + (row * gapY)
+    };
+}
+
+/**
+ * NETWORK HANDLERS
+ */
+socket.onmessage = (event) => { gameState = JSON.parse(event.data); };
+
+/**
+ * DRAWING LOGIC
+ */
 function drawCard(card, x, y, isBack = false) {
     if (isBack) {
         if (images['_Dorso']) ctx.drawImage(images['_Dorso'], x, y, CARD_W, CARD_H);
         return;
     }
     if (card) {
-        let vStr = valuesMap[card.v] || card.v.padStart(2, '0');
-        let sStr = suitsMap[card.s];
+        let vStr = valuesMap[card.v] || card.v.toString().padStart(2, '0');
+        let sStr = suitsMap[card.s] || card.s;
         const img = images[`${sStr}${vStr}`];
-        if (img) {
-            ctx.drawImage(img, x, y, CARD_W, CARD_H);
-        } else {
-            // Fallback se l'immagine non carica
-            ctx.fillStyle = "white";
-            ctx.fillRect(x, y, CARD_W, CARD_H);
-            ctx.strokeStyle = "black";
-            ctx.strokeRect(x, y, CARD_W, CARD_H);
-            ctx.fillStyle = "black";
-            ctx.fillText(`${card.v}${card.s[0]}`, x + 5, y + 20);
-        }
+        if (img) ctx.drawImage(img, x, y, CARD_W, CARD_H);
     }
 }
 
 function renderLoop() {
-    ctx.fillStyle = "#1b5e20"; // Tavolo Verde
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#1a4a1e"; 
+    ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
 
     if (!gameState || !gameState.game_started) {
         ctx.fillStyle = "white"; 
         ctx.textAlign = "center";
-        ctx.font = "24px Arial";
-        ctx.fillText("IN ATTESA DI UN AVVERSARIO...", canvas.width/2, canvas.height/2);
+        ctx.font = "30px Arial";
+        ctx.fillText("IN ATTESA DI UN AVVERSARIO...", V_WIDTH/2, V_HEIGHT/2);
     } else {
-        // Punteggi
-        ctx.fillStyle = "white";
-        ctx.textAlign = "left";
-        ctx.font = "16px Arial";
-        ctx.fillText(`TU: ${gameState.scores[gameState.p_idx]}`, 820, 30);
-        ctx.fillText(`AVVERSARIO: ${gameState.scores[1-gameState.p_idx]}`, 820, 60);
-
-        // Mazzo e Scarti
-        drawCard(null, 350, 250, true);
-        if (gameState.top_discard) drawCard(gameState.top_discard, 450, 250);
-
-        // Turno
-        if (gameState.turn === gameState.p_idx && !gameState.game_over) {
-            ctx.strokeStyle = "#00ff00"; 
-            ctx.lineWidth = 3;
-            ctx.strokeRect(95, 515, (gameState.hand.length * 95), CARD_H + 10);
+        // 1. AREA AVVERSARIO (Semplificata in alto)
+        for (let i = 0; i < gameState.opp_count; i++) {
+            drawCard(null, 250 + (i * 40), 20, true);
         }
 
-        // Mano Avversario
-        for (let i = 0; i < gameState.opp_count; i++) drawCard(null, 100+i*95, 50, true);
+        // 2. CENTRO (Mazzo e Scarto)
+        drawCard(null, 250, 180, true); // Mazzo
+        if (gameState.top_discard) drawCard(gameState.top_discard, 450, 180); // Scarto
 
-        // Mano Giocatore
+        // Area "CHIUDI" (zona bersaglio a destra dello scarto)
+        ctx.strokeStyle = "rgba(255,255,0,0.5)";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(650, 180, CARD_W, CARD_H);
+        ctx.fillStyle = "yellow";
+        ctx.font = "14px Arial";
+        ctx.fillText("CHIUDI", 700, 170);
+
+        // 3. MANO GIOCATORE (3 sopra, 4 sotto)
         gameState.hand.forEach((card, i) => {
             if (draggedCard && draggedCard.index === i) return;
-            drawCard(card, 100+i*95, 520);
+            const pos = getCardHandPos(i);
+            
+            if (gameState.turn === gameState.p_idx) {
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = "#00ff00";
+            }
+            drawCard(card, pos.x, pos.y);
+            ctx.shadowBlur = 0;
         });
 
-        // Trascinamento
+        // 4. TRASCINAMENTO
         if (draggedCard) {
             drawCard(draggedCard.card, mouse.x + offset.x, mouse.y + offset.y);
         }
 
-        if (gameState.game_over) {
-            ctx.fillStyle = "rgba(0,0,0,0.7)";
-            ctx.fillRect(0,0,canvas.width, canvas.height);
-            ctx.fillStyle = "white";
-            ctx.textAlign = "center";
-            ctx.fillText("ROUND FINITO", canvas.width/2, canvas.height/2);
-            ctx.fillText("Clicca per continuare", canvas.width/2, canvas.height/2 + 40);
-        }
+        // 5. HUD
+        ctx.fillStyle = "white";
+        ctx.textAlign = "left";
+        ctx.fillText(`TU: ${gameState.scores[gameState.p_idx]}`, 30, 40);
+        ctx.textAlign = "right";
+        ctx.fillText(`AVV: ${gameState.scores[1-gameState.p_idx]}`, V_WIDTH - 30, 40);
     }
     requestAnimationFrame(renderLoop);
 }
 
-// Eventi Mouse
-canvas.addEventListener('mousedown', (e) => {
-    if (!gameState || gameState.game_over) return;
+/**
+ * INPUT LOGIC
+ */
+function getScaledPos(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
-    mouse.x = e.clientX - rect.left; mouse.y = e.clientY - rect.top;
-    
+    return {
+        x: (clientX - rect.left) * (V_WIDTH / rect.width),
+        y: (clientY - rect.top) * (V_HEIGHT / rect.height)
+    };
+}
+
+function handleStart(x, y) {
+    if (!gameState || gameState.game_over) return;
+    mouse.x = x; mouse.y = y;
+
+    // Controllo collisione mano
     gameState.hand.forEach((card, i) => {
-        const x = 100+i*95, y = 520;
-        if (mouse.x > x && mouse.x < x+CARD_W && mouse.y > y && mouse.y < y+CARD_H) {
+        const p = getCardHandPos(i);
+        if (x > p.x && x < p.x + CARD_W && y > p.y && y < p.y + CARD_H) {
             draggedCard = { card, index: i };
-            offset.x = x - mouse.x; offset.y = y - mouse.y;
+            offset.x = p.x - x;
+            offset.y = p.y - y;
         }
     });
 
+    // Pesca
     if (gameState.turn === gameState.p_idx && gameState.hand.length === 7) {
-        if (mouse.x > 350 && mouse.x < 350+CARD_W && mouse.y > 250 && mouse.y < 250+CARD_H) 
+        if (x > 250 && x < 250+CARD_W && y > 180 && y < 180+CARD_H) 
             socket.send(JSON.stringify({action: "draw_deck"}));
-        if (gameState.top_discard && mouse.x > 450 && mouse.x < 450+CARD_W && mouse.y > 250 && mouse.y < 250+CARD_H) 
+        if (x > 450 && x < 450+CARD_W && y > 180 && y < 180+CARD_H) 
             socket.send(JSON.stringify({action: "draw_discard"}));
     }
-});
+}
 
-canvas.addEventListener('mousemove', (e) => {
-    const rect = canvas.getBoundingClientRect();
-    mouse.x = e.clientX - rect.left; mouse.y = e.clientY - rect.top;
-});
-
-canvas.addEventListener('mouseup', () => {
+function handleEnd() {
     if (draggedCard) {
-        // Scarto
-        if (mouse.x > 450 && mouse.x < 525 && mouse.y > 250 && mouse.y < 376) 
+        // Scarta
+        if (mouse.x > 450 && mouse.x < 450+CARD_W && mouse.y > 180 && mouse.y < 180+CARD_H) 
             socket.send(JSON.stringify({action: "discard", card: draggedCard.card}));
-        // Chiusura (Zona a destra degli scarti)
-        else if (mouse.x > 550 && mouse.x < 625 && mouse.y > 250 && mouse.y < 376) 
+        // Chiudi
+        else if (mouse.x > 650 && mouse.x < 650+CARD_W && mouse.y > 180 && mouse.y < 180+CARD_H) 
             socket.send(JSON.stringify({action: "close", card: draggedCard.card}));
-        // Riordinamento
-        else if (mouse.y > 470) {
-            let nIdx = Math.floor((mouse.x - 100 + CARD_W/2) / 95);
-            nIdx = Math.max(0, Math.min(nIdx, gameState.hand.length - 1));
-            const card = gameState.hand.splice(draggedCard.index, 1)[0];
-            gameState.hand.splice(nIdx, 0, card);
-            socket.send(JSON.stringify({action: "reorder", new_hand: gameState.hand}));
-        }
+        
         draggedCard = null;
     }
-});
+}
 
-canvas.addEventListener('click', () => {
-    if (gameState && gameState.game_over) {
-        socket.send(JSON.stringify({action: "next_round"}));
-    }
+// Event Listeners
+canvas.addEventListener('mousedown', (e) => {
+    const pos = getScaledPos(e.clientX, e.clientY);
+    handleStart(pos.x, pos.y);
 });
+canvas.addEventListener('mousemove', (e) => {
+    const pos = getScaledPos(e.clientX, e.clientY);
+    mouse.x = pos.x; mouse.y = pos.y;
+});
+window.addEventListener('mouseup', handleEnd);
+
+canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    const pos = getScaledPos(e.touches[0].clientX, e.touches[0].clientY);
+    handleStart(pos.x, pos.y);
+}, { passive: false });
+canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    const pos = getScaledPos(e.touches[0].clientX, e.touches[0].clientY);
+    mouse.x = pos.x; mouse.y = pos.y;
+}, { passive: false });
+canvas.addEventListener('touchend', handleEnd);
 
 preloadImages();
