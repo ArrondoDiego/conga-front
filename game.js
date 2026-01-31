@@ -1,15 +1,15 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-/** * SERVER CONNECTION SETTINGS
- * Replace 'conga-server-production.up.railway.app' with the domain Railway gave you.
+/** * CONFIGURAZIONE SERVER
+ * Sostituisci il dominio qui sotto con quello fornito da Railway
  */
-const RAILWAY_DOMAIN = 'conga-server-production.up.railway.app'; 
+const RAILWAY_DOMAIN = 'https://web-production-1a2e.up.railway.app/'; 
 
 const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 const serverUrl = isLocal ? 'ws://localhost:5555' : `wss://${RAILWAY_DOMAIN}`;
 
-console.log(`Connecting to server: ${serverUrl}`);
+console.log(`Tentativo di connessione a: ${serverUrl}`);
 const socket = new WebSocket(serverUrl);
 
 let gameState = null;
@@ -18,11 +18,11 @@ let offset = { x: 0, y: 0 };
 let mouse = { x: 0, y: 0 };
 const images = {};
 
-// Card Dimensions (Ratio 356x600)
+// Dimensioni Carte
 const CARD_W = 75; 
 const CARD_H = 126; 
 
-// Mapping server data to image filenames
+// Mapping per i nomi dei file (Basato sulla tua cartella assets)
 const suitsMap = { 'Ori': 'Denari', 'Bastoni': 'Bastoni', 'Coppe': 'Coppe', 'Spade': 'Spade' };
 const valuesMap = { 'F': '08', 'C': '09', 'R': '10' };
 
@@ -41,7 +41,7 @@ function preloadImages() {
             images[key].src = `assets/${key}.png`;
             images[key].onload = checkLoad;
             images[key].onerror = () => {
-                console.warn(`Missing image: assets/${key}.png`);
+                console.warn(`Immagine mancante: assets/${key}.png`);
                 checkLoad();
             };
         });
@@ -55,9 +55,9 @@ socket.onmessage = (event) => {
     gameState = JSON.parse(event.data);
 };
 
-socket.onopen = () => console.log("Successfully connected to server!");
-socket.onerror = (err) => console.error("WebSocket error observed:", err);
-socket.onclose = () => console.warn("Disconnected from server.");
+socket.onopen = () => console.log("Connesso al server con successo!");
+socket.onerror = (err) => console.error("Errore WebSocket:", err);
+socket.onclose = () => console.warn("Connessione chiusa.");
 
 function drawCard(card, x, y, isBack = false) {
     if (isBack) {
@@ -71,116 +71,72 @@ function drawCard(card, x, y, isBack = false) {
         if (img) {
             ctx.drawImage(img, x, y, CARD_W, CARD_H);
         } else {
-            // Fallback: draw a simple card if image is missing
+            // Fallback se l'immagine non carica
             ctx.fillStyle = "white";
             ctx.fillRect(x, y, CARD_W, CARD_H);
             ctx.strokeStyle = "black";
             ctx.strokeRect(x, y, CARD_W, CARD_H);
-            ctx.fillStyle = "red";
-            ctx.font = "14px Arial";
+            ctx.fillStyle = "black";
             ctx.fillText(`${card.v}${card.s[0]}`, x + 5, y + 20);
         }
     }
 }
 
 function renderLoop() {
-    // Green Table Background
-    ctx.fillStyle = "#1b5e20";
+    ctx.fillStyle = "#1b5e20"; // Tavolo Verde
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     if (!gameState || !gameState.game_started) {
         ctx.fillStyle = "white"; 
         ctx.textAlign = "center";
         ctx.font = "24px Arial";
-        ctx.fillText("WAITING FOR OPPONENT...", canvas.width/2, canvas.height/2);
+        ctx.fillText("IN ATTESA DI UN AVVERSARIO...", canvas.width/2, canvas.height/2);
     } else {
-        // Scores UI
-        ctx.fillStyle = "rgba(0,0,0,0.4)";
-        ctx.beginPath();
-        ctx.roundRect(810, 230, 180, 110, 10);
-        ctx.fill();
-        
-        ctx.fillStyle = "#FFD700"; 
-        ctx.font = "bold 18px Arial"; 
-        ctx.textAlign = "left";
-        ctx.fillText("POINTS:", 825, 260);
+        // Punteggi
         ctx.fillStyle = "white";
+        ctx.textAlign = "left";
         ctx.font = "16px Arial";
-        ctx.fillText(`YOU: ${gameState.scores[gameState.p_idx]}`, 825, 290);
-        ctx.fillText(`OPP: ${gameState.scores[1-gameState.p_idx]}`, 825, 320);
+        ctx.fillText(`TU: ${gameState.scores[gameState.p_idx]}`, 820, 30);
+        ctx.fillText(`AVVERSARIO: ${gameState.scores[1-gameState.p_idx]}`, 820, 60);
 
-        // Deck & Discard Pile
+        // Mazzo e Scarti
         drawCard(null, 350, 250, true);
         if (gameState.top_discard) drawCard(gameState.top_discard, 450, 250);
 
-        // Turn Indicator Frame
+        // Turno
         if (gameState.turn === gameState.p_idx && !gameState.game_over) {
             ctx.strokeStyle = "#00ff00"; 
-            ctx.lineWidth = 5;
+            ctx.lineWidth = 3;
             ctx.strokeRect(95, 515, (gameState.hand.length * 95), CARD_H + 10);
-            ctx.fillStyle = "#00ff00";
-            ctx.font = "bold 14px Arial";
-            ctx.fillText("YOUR TURN", 100, 505);
         }
 
-        // Opponent's Area
-        if (gameState.game_over && gameState.opp_hand) {
-            gameState.opp_hand.forEach((c, i) => drawCard(c, 100+i*95, 50));
-        } else {
-            for (let i = 0; i < gameState.opp_count; i++) drawCard(null, 100+i*95, 50, true);
-        }
+        // Mano Avversario
+        for (let i = 0; i < gameState.opp_count; i++) drawCard(null, 100+i*95, 50, true);
 
-        // Player's Area
+        // Mano Giocatore
         gameState.hand.forEach((card, i) => {
             if (draggedCard && draggedCard.index === i) return;
             drawCard(card, 100+i*95, 520);
         });
 
-        // Dragging Card
+        // Trascinamento
         if (draggedCard) {
-            ctx.shadowBlur = 10; ctx.shadowColor = "black";
             drawCard(draggedCard.card, mouse.x + offset.x, mouse.y + offset.y);
-            ctx.shadowBlur = 0;
         }
 
-        if (gameState.game_over) drawSummaryPopup();
+        if (gameState.game_over) {
+            ctx.fillStyle = "rgba(0,0,0,0.7)";
+            ctx.fillRect(0,0,canvas.width, canvas.height);
+            ctx.fillStyle = "white";
+            ctx.textAlign = "center";
+            ctx.fillText("ROUND FINITO", canvas.width/2, canvas.height/2);
+            ctx.fillText("Clicca per continuare", canvas.width/2, canvas.height/2 + 40);
+        }
     }
     requestAnimationFrame(renderLoop);
 }
 
-function drawSummaryPopup() {
-    ctx.fillStyle = "rgba(0,0,0,0.8)"; 
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    ctx.fillStyle = "#2c3e50"; 
-    ctx.beginPath(); 
-    ctx.roundRect(canvas.width/2 - 200, 200, 400, 280, 15); 
-    ctx.fill();
-    ctx.strokeStyle = "#FFD700"; ctx.lineWidth = 2;
-    ctx.stroke();
-
-    ctx.fillStyle = "#FFD700"; ctx.font = "bold 26px Arial"; ctx.textAlign = "center";
-    ctx.fillText("ROUND OVER", canvas.width/2, 250);
-
-    const det = gameState.last_round_details;
-    if (det) {
-        const iClosed = det.closer === gameState.p_idx;
-        ctx.fillStyle = "white"; ctx.font = "18px Arial";
-        ctx.fillText(iClosed ? "You closed the round!" : "Opponent closed the round", canvas.width/2, 295);
-        ctx.fillText(`Your round score: +${iClosed ? det.p_closer : det.p_opponent}`, canvas.width/2, 335);
-        ctx.fillText(`Opponent round score: +${iClosed ? det.p_opponent : det.p_closer}`, canvas.width/2, 365);
-    }
-
-    const ready = gameState.ready_next[gameState.p_idx];
-    ctx.fillStyle = ready ? "#7f8c8d" : "#27ae60";
-    ctx.beginPath(); 
-    ctx.roundRect(canvas.width/2 - 120, 400, 240, 50, 10); 
-    ctx.fill();
-    ctx.fillStyle = "white";
-    ctx.fillText(ready ? "WAITING..." : "READY FOR NEXT", canvas.width/2, 432);
-}
-
-// Input Event Listeners
+// Eventi Mouse
 canvas.addEventListener('mousedown', (e) => {
     if (!gameState || gameState.game_over) return;
     const rect = canvas.getBoundingClientRect();
@@ -209,12 +165,13 @@ canvas.addEventListener('mousemove', (e) => {
 
 canvas.addEventListener('mouseup', () => {
     if (draggedCard) {
-        // Discard or Close
+        // Scarto
         if (mouse.x > 450 && mouse.x < 525 && mouse.y > 250 && mouse.y < 376) 
             socket.send(JSON.stringify({action: "discard", card: draggedCard.card}));
+        // Chiusura (Zona a destra degli scarti)
         else if (mouse.x > 550 && mouse.x < 625 && mouse.y > 250 && mouse.y < 376) 
             socket.send(JSON.stringify({action: "close", card: draggedCard.card}));
-        // Internal Reordering
+        // Riordinamento
         else if (mouse.y > 470) {
             let nIdx = Math.floor((mouse.x - 100 + CARD_W/2) / 95);
             nIdx = Math.max(0, Math.min(nIdx, gameState.hand.length - 1));
@@ -226,13 +183,9 @@ canvas.addEventListener('mouseup', () => {
     }
 });
 
-canvas.addEventListener('click', (e) => {
-    if (gameState?.game_over) {
-        const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left, y = e.clientY - rect.top;
-        if (x > canvas.width/2 - 120 && x < canvas.width/2 + 120 && y > 400 && y < 450) {
-            socket.send(JSON.stringify({action: "next_round"}));
-        }
+canvas.addEventListener('click', () => {
+    if (gameState && gameState.game_over) {
+        socket.send(JSON.stringify({action: "next_round"}));
     }
 });
 
