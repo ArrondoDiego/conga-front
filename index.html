@@ -3,12 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Conga Mobile</title>
+    <title>Conga Online</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="info-bar" id="statusText">CONNETTENDO AL SERVER...</div>
-    <canvas id="gameCanvas"></canvas>
+    <div id="game-container">
+        <div id="opponent-hand" class="card-zone"></div>
+
+        <div id="table-center">
+            <div id="deck" class="card-slot">
+                <img src="assets/Dorso.png" id="deck-img">
+            </div>
+            <div id="discard-pile" class="card-slot"></div>
+            <div id="close-zone" class="card-slot">
+                <span id="close-label">CHIUDI</span>
+            </div>
+        </div>
+
+        <div id="player-hand" class="card-zone"></div>
+        
+        <div id="ui-overlay">
+            <div id="score-me">TU: 0</div>
+            <div id="status-text">In attesa...</div>
+            <div id="score-opp">AVV: 0</div>
+        </div>
+    </div>
     <script src="game.js"></script>
 </body>
 </html>
