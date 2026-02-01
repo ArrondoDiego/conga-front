@@ -5,6 +5,7 @@ html, body {
     display: flex; justify-content: center; align-items: center;
     font-family: sans-serif;
     overflow: hidden;
+    touch-action: none; /* Fondamentale per bloccare scroll e pinch */
 }
 
 #game-container {
@@ -13,9 +14,10 @@ html, body {
     max-width: 1000px; 
     background-color: #1a4a1e;
     border: 2px solid #333;
+    overflow: hidden;
 }
 
-/* AVVERSARIO: In alto, carte sovrapposte come una mano vera */
+/* AVVERSARIO */
 #opponent-hand {
     position: absolute;
     top: 30px; left: 0; right: 0;
@@ -24,39 +26,17 @@ html, body {
     height: 120px;
 }
 
-#close-zone {
-    border: 2px dashed #ff4444;
-    background: rgba(255, 0, 0, 0.05);
-    transition: all 0.3s;
-}
-
-#close-zone.can-close {
-    border: 2px solid #ff0000;
-    background: rgba(255, 0, 0, 0.2);
-    box-shadow: 0 0 15px rgba(255, 0, 0, 0.4);
-    cursor: pointer;
-}
-
-#close-label {
-    color: #ff4444;
-    font-weight: bold;
-    font-size: 12px;
-    text-align: center;
-    pointer-events: none; /* Il click deve passare al div sotto */
-}
-
 #opponent-hand .card {
     width: 70px;
-    margin-left: -40px; /* Effetto sovrapposizione */
-    transform: rotate(var(--rot, 0deg)); /* Opzionale: per inclinarle leggermente */
+    margin-left: -40px;
+    pointer-events: none; /* Non disturbano il tocco del tavolo */
 }
-
 #opponent-hand .card:first-child { margin-left: 0; }
 
-/* CENTRO TAVOLO: Esattamente al 55% di altezza */
+/* CENTRO TAVOLO (55%) */
 #table-center {
     position: absolute;
-    top: 55%; /* Richiesta: 55% altezza */
+    top: 55%;
     left: 50%;
     transform: translate(-50%, -50%);
     display: flex;
@@ -66,24 +46,45 @@ html, body {
     width: 100%;
 }
 
-.card-slot img {
+.card-slot img, .card-slot div {
     width: 80px; height: 115px;
-    border: 2px dashed rgba(255,255,255,0.1);
-    display: flex; justify-content: center; align-items: center;
-    position: relative;
+    border-radius: 6px;
 }
 
-/* TUA MANO: 2 file, 4 sotto e 3/4 sopra */
+/* ZONA CHIUSURA */
+#close-zone {
+    width: 90px;
+    height: 125px;
+    border: 2px dashed #ff4444;
+    background: rgba(255, 0, 0, 0.05);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    position: relative;
+    z-index: 1; /* Deve stare sotto la carta trascinata ma sopra lo sfondo */
+}
+.can-close-active {
+    border: 2px solid #ff0000 !important;
+    background: rgba(255, 0, 0, 0.2) !important;
+    box-shadow: 0 0 15px rgba(255, 0, 0, 0.4);
+}
+#close-label {
+    color: #ff4444; font-weight: bold; font-size: 11px;
+    text-align: center; pointer-events: none;
+}
+
+/* TUA MANO: 2 file */
 #player-hand {
     position: absolute;
-    bottom: 40px;
+    bottom: 30px;
     left: 50%;
     transform: translateX(-50%);
     display: flex;
-    flex-wrap: wrap-reverse; /* Fa sì che le prime carte stiano SOTTO e le nuove SOPRA */
+    flex-wrap: wrap; /* Avvolge le carte */
     justify-content: center;
     gap: 10px;
-    width: 380px; /* Larghezza calcolata per far stare circa 4 carte per fila */
+    width: 380px; /* Larghezza per forzare 2 file */
 }
 
 /* STILE CARTE */
@@ -93,17 +94,28 @@ html, body {
     border-radius: 6px;
     box-shadow: 2px 2px 10px rgba(0,0,0,0.5);
     background: white;
-    cursor: pointer;
-    transition: transform 0.1s;
     user-select: none;
+    -webkit-user-drag: none;
+    touch-action: none;
+    will-change: transform;
 }
 
-.card:hover { transform: scale(1.05) translateY(-5px); z-index: 100; }
-.dragging { opacity: 0.3; }
-.my-turn { outline: 3px solid #00ff00; box-shadow: 0 0 20px #00ff00; }
+.touchable-card {
+    z-index: 10;
+}
 
+/* UI OVERLAY */
 #ui-overlay {
     position: absolute; top: 0; width: 100%;
     display: flex; justify-content: space-between;
     padding: 10px 20px; color: white; box-sizing: border-box;
+    z-index: 500;
+}
+
+#ready-btn {
+    position: fixed; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 20px 40px; background: #27ae60;
+    color: white; border: none; border-radius: 15px;
+    font-weight: bold; z-index: 2000;
 }

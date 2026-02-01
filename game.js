@@ -8,28 +8,21 @@ const valuesMap = { 'F': '08', 'C': '09', 'R': '10' };
 
 let localHandOrder = null;
 let myPlayerIdx = null;
-let lastGameState = null;
 
-// Gestione Touch
 let draggedElement = null;
 let touchStartX = 0;
 let touchStartY = 0;
+let hasMoved = false;
+const moveThreshold = 10; 
 
 socket.onmessage = (event) => {
     const data = JSON.parse(event.data);
-
     if (data.type === "game_over") {
         renderFinalView(data);
         showReadyButton();
         return;
     }
-
-    if (data.type === "error") {
-        alert(data.msg);
-        return;
-    }
-
-    lastGameState = data;
+    if (data.type === "error") { alert(data.msg); return; }
     if (data.p_idx !== undefined) myPlayerIdx = data.p_idx;
     if (data.hand) {
         if (!localHandOrder || localHandOrder.length !== data.hand.length) {
@@ -43,8 +36,8 @@ function renderGame(state) {
     if (!state.game_started) return;
     document.getElementById('ready-btn')?.remove();
 
-    document.getElementById('score-me').innerText = `TU: ${state.scores[state.p_idx]}`;
-    document.getElementById('score-opp').innerText = `AVV: ${state.scores[1 - state.p_idx]}`;
+    document.getElementById('score-me').innerText = `TU: ${state.scores[state.p_idx] || 0}`;
+    document.getElementById('score-opp').innerText = `AVV: ${state.scores[1 - state.p_idx] || 0}`;
 
     const oppHand = document.getElementById('opponent-hand');
     oppHand.innerHTML = '';
@@ -60,70 +53,74 @@ function renderPlayerHand(state) {
     const container = document.getElementById('player-hand');
     container.innerHTML = '';
     const hand = localHandOrder || state.hand;
+    const isMyTurn = state.turn === state.p_idx;
+    const canAction = isMyTurn && state.hand.length === 8;
 
     hand.forEach((card, index) => {
         const cardImg = createCardElement(card);
         cardImg.classList.add('touchable-card');
         cardImg.dataset.index = index;
 
-        // --- TOUCH EVENTS ---
         cardImg.addEventListener('touchstart', (e) => {
             draggedElement = cardImg;
+            hasMoved = false;
             const touch = e.touches[0];
             touchStartX = touch.clientX;
             touchStartY = touch.clientY;
             cardImg.style.zIndex = "1000";
-            if (navigator.vibrate) navigator.vibrate(10);
+            cardImg.style.transition = "none";
         }, {passive: false});
 
         cardImg.addEventListener('touchmove', (e) => {
             if (!draggedElement) return;
-            e.preventDefault();
             const touch = e.touches[0];
             const dx = touch.clientX - touchStartX;
             const dy = touch.clientY - touchStartY;
-            draggedElement.style.transform = `translate(${dx}px, ${dy}px) scale(1.1)`;
+
+            if (Math.abs(dx) > moveThreshold || Math.abs(dy) > moveThreshold) {
+                hasMoved = true;
+                e.preventDefault(); 
+                draggedElement.style.transform = `translate(${dx}px, ${dy}px) scale(1.1)`;
+            }
         }, {passive: false});
 
         cardImg.addEventListener('touchend', (e) => {
             if (!draggedElement) return;
             const touch = e.changedTouches[0];
             
-            // Trova l'elemento sotto il dito al rilascio
-            draggedElement.style.display = 'none';
-            const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
-            draggedElement.style.display = 'block';
+            if (!hasMoved) {
+                // TAP -> SCARTA SEMPLICE
+                if (canAction) {
+                    socket.send(JSON.stringify({action: "discard", card: card}));
+                }
+            } else {
+                // DRAG -> RILEVAZIONE BERSAGLIO SOTTO IL DITO
+                draggedElement.style.visibility = 'hidden'; // Uso visibility per non perdere il layout
+                const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
+                draggedElement.style.visibility = 'visible';
+
+                if (targetEl) {
+                    const closeZone = targetEl.closest('#close-zone');
+                    const targetCard = targetEl.closest('.touchable-card');
+
+                    if (closeZone && canAction) {
+                        // CHIUSURA: Invio la carta da scartare per chiudere
+                        socket.send(JSON.stringify({action: "close", card: card}));
+                    } else if (targetCard && targetCard !== draggedElement) {
+                        // SCAMBIO ORDINE MANO
+                        const fromIdx = parseInt(draggedElement.dataset.index);
+                        const toIdx = parseInt(targetCard.dataset.index);
+                        [hand[fromIdx], hand[toIdx]] = [hand[toIdx], hand[fromIdx]];
+                        localHandOrder = [...hand];
+                        renderPlayerHand(state);
+                    }
+                }
+            }
 
             draggedElement.style.zIndex = "";
             draggedElement.style.transform = "";
-
-            if (targetEl) {
-                // Caso 1: Rilascio su un'altra carta (Scambio)
-                const targetCard = targetEl.closest('.touchable-card');
-                if (targetCard && targetCard !== draggedElement) {
-                    const fromIdx = parseInt(draggedElement.dataset.index);
-                    const toIdx = parseInt(targetCard.dataset.index);
-                    [hand[fromIdx], hand[toIdx]] = [hand[toIdx], hand[fromIdx]];
-                    localHandOrder = [...hand];
-                    if (navigator.vibrate) navigator.vibrate(20);
-                    renderPlayerHand(state);
-                }
-
-                // Caso 2: Rilascio su zona chiusura
-                const closeZone = targetEl.closest('#close-zone');
-                if (closeZone && state.turn === state.p_idx && state.hand.length === 8) {
-                    socket.send(JSON.stringify({action: "close", card: card}));
-                }
-            }
+            draggedElement.style.transition = "transform 0.1s";
             draggedElement = null;
-        });
-
-        // Tap rapido per scarto semplice
-        cardImg.addEventListener('click', () => {
-            if (state.turn === state.p_idx && state.hand.length === 8) {
-                socket.send(JSON.stringify({action: "discard", card: card}));
-                if (navigator.vibrate) navigator.vibrate(15);
-            }
         });
 
         container.appendChild(cardImg);
@@ -141,13 +138,15 @@ function renderTable(state) {
         };
     }
 
-    discardPile.innerHTML = '';
-    if (state.top_discard) {
-        const topDiscard = createCardElement(state.top_discard);
-        topDiscard.onclick = () => { 
-            if (isMyTurn && state.hand.length === 7) socket.send(JSON.stringify({action: "draw_discard"})); 
-        };
-        discardPile.appendChild(topDiscard);
+    if (discardPile) {
+        discardPile.innerHTML = '';
+        if (state.top_discard) {
+            const topDiscard = createCardElement(state.top_discard);
+            topDiscard.onclick = () => { 
+                if (isMyTurn && state.hand.length === 7) socket.send(JSON.stringify({action: "draw_discard"})); 
+            };
+            discardPile.appendChild(topDiscard);
+        }
     }
 }
 
@@ -155,13 +154,10 @@ function renderFinalView(data) {
     const oppIdx = 1 - myPlayerIdx;
     const oppHandContainer = document.getElementById('opponent-hand');
     oppHandContainer.innerHTML = '';
-    
-    // Scopre carte avversario
-    data.all_hands[oppIdx].forEach(card => {
-        oppHandContainer.appendChild(createCardElement(card));
-    });
-
-    alert(`FINE ROUND!\nVincitore: P${data.winner + 1}\nPunti Round: ${data.closer_points} (Tu) - ${data.opponent_points} (Avv)`);
+    if (data.all_hands && data.all_hands[oppIdx]) {
+        data.all_hands[oppIdx].forEach(card => oppHandContainer.appendChild(createCardElement(card)));
+    }
+    alert(`FINE ROUND!\nChiude P${data.winner + 1}\nTu: ${data.total_scores[myPlayerIdx]} | Avv: ${data.total_scores[oppIdx]}`);
 }
 
 function showReadyButton() {
@@ -171,7 +167,7 @@ function showReadyButton() {
     btn.innerText = "PROSSIMO ROUND";
     btn.onclick = () => {
         socket.send(JSON.stringify({action: "ready_next_round"}));
-        btn.innerText = "ATTESA...";
+        btn.innerText = "ATTENDI...";
         btn.disabled = true;
     };
     document.body.appendChild(btn);
