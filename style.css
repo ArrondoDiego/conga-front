@@ -3,86 +3,107 @@ html, body {
     width: 100%; height: 100%;
     background-color: #071a0a;
     display: flex; justify-content: center; align-items: center;
-    font-family: Arial, sans-serif;
+    font-family: sans-serif;
     overflow: hidden;
 }
 
 #game-container {
     position: relative;
-    width: 100vw;
-    height: 100vh;
-    max-width: 900px;
-    max-height: 700px;
+    width: 100vw; height: 100vh;
+    max-width: 1000px; 
     background-color: #1a4a1e;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
     border: 2px solid #333;
 }
 
-.card-zone {
+/* AVVERSARIO: In alto, carte sovrapposte come una mano vera */
+#opponent-hand {
+    position: absolute;
+    top: 30px; left: 0; right: 0;
     display: flex;
     justify-content: center;
-    align-items: center;
-    gap: 5px;
-    height: 180px;
-    padding: 10px;
-    background: rgba(0,0,0,0.1);
+    height: 120px;
 }
 
+#close-zone {
+    border: 2px dashed #ff4444;
+    background: rgba(255, 0, 0, 0.05);
+    transition: all 0.3s;
+}
+
+#close-zone.can-close {
+    border: 2px solid #ff0000;
+    background: rgba(255, 0, 0, 0.2);
+    box-shadow: 0 0 15px rgba(255, 0, 0, 0.4);
+    cursor: pointer;
+}
+
+#close-label {
+    color: #ff4444;
+    font-weight: bold;
+    font-size: 12px;
+    text-align: center;
+    pointer-events: none; /* Il click deve passare al div sotto */
+}
+
+#opponent-hand .card {
+    width: 70px;
+    margin-left: -40px; /* Effetto sovrapposizione */
+    transform: rotate(var(--rot, 0deg)); /* Opzionale: per inclinarle leggermente */
+}
+
+#opponent-hand .card:first-child { margin-left: 0; }
+
+/* CENTRO TAVOLO: Esattamente al 55% di altezza */
 #table-center {
+    position: absolute;
+    top: 55%; /* Richiesta: 55% altezza */
+    left: 50%;
+    transform: translate(-50%, -50%);
     display: flex;
     justify-content: center;
     align-items: center;
     gap: 30px;
-    flex-grow: 1;
+    width: 100%;
 }
 
-.card-slot {
-    width: 80px;
-    height: 120px;
-    border: 2px dashed rgba(255,255,255,0.2);
-    display: flex;
-    justify-content: center;
-    align-items: center;
+.card-slot img {
+    width: 80px; height: 115px;
+    border: 2px dashed rgba(255,255,255,0.1);
+    display: flex; justify-content: center; align-items: center;
     position: relative;
 }
 
-/* STILE DELLE CARTE */
-.card, #deck-img {
-    width: 80px; /* Cambia qui per rimpicciolire */
+/* TUA MANO: 2 file, 4 sotto e 3/4 sopra */
+#player-hand {
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-wrap: wrap-reverse; /* Fa sì che le prime carte stiano SOTTO e le nuove SOPRA */
+    justify-content: center;
+    gap: 10px;
+    width: 380px; /* Larghezza calcolata per far stare circa 4 carte per fila */
+}
+
+/* STILE CARTE */
+.card {
+    width: 85px;
     height: auto;
-    border-radius: 5px;
-    box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
-    transition: transform 0.2s, box-shadow 0.2s;
+    border-radius: 6px;
+    box-shadow: 2px 2px 10px rgba(0,0,0,0.5);
+    background: white;
     cursor: pointer;
+    transition: transform 0.1s;
+    user-select: none;
 }
 
-.card:hover {
-    transform: translateY(-10px) scale(1.05);
-    z-index: 10;
-}
-
-.my-turn {
-    border: 3px solid #00ff00 !important;
-    box-shadow: 0 0 15px #00ff00;
-}
+.card:hover { transform: scale(1.05) translateY(-5px); z-index: 100; }
+.dragging { opacity: 0.3; }
+.my-turn { outline: 3px solid #00ff00; box-shadow: 0 0 20px #00ff00; }
 
 #ui-overlay {
-    position: absolute;
-    top: 0;
-    width: 100%;
-    display: flex;
-    justify-content: space-between;
-    padding: 10px 20px;
-    box-sizing: border-box;
-    color: white;
-    background: rgba(0,0,0,0.3);
-    pointer-events: none;
-}
-
-#close-label {
-    color: yellow;
-    font-weight: bold;
-    font-size: 12px;
+    position: absolute; top: 0; width: 100%;
+    display: flex; justify-content: space-between;
+    padding: 10px 20px; color: white; box-sizing: border-box;
 }
