@@ -1,7 +1,7 @@
 const RAILWAY_DOMAIN = 'web-production-1a2e.up.railway.app'; 
 // Proviamo prima senza /ws, che è lo standard per Railway se non specificato diversamente nel backend
-let serverUrl = `wss://${RAILWAY_DOMAIN}`;
-
+//let serverUrl = `wss://${RAILWAY_DOMAIN}`;
+const serverUrl = 'wss://web-production-1a2e.up.railway.app'
 let socket;
 let myPlayerIdx = null;
 let localHandOrder = null;
