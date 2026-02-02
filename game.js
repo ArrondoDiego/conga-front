@@ -1,13 +1,19 @@
 const RAILWAY_DOMAIN = 'web-production-1a2e.up.railway.app'; 
-const isLocal = false; // Impostato su false per usare Railway
-//const serverUrl = isLocal ? 'ws://localhost:5555' : `wss://${RAILWAY_DOMAIN}`;
-const serverUrl = 'wss://web-production-1a2e.up.railway.app/ws'
+// Proviamo prima senza /ws, che è lo standard per Railway se non specificato diversamente nel backend
+let serverUrl = `wss://${RAILWAY_DOMAIN}`;
+
 let socket;
+let myPlayerIdx = null;
+let localHandOrder = null;
+
 function connect() {
+    console.log("%c🔌 Tentativo di connessione a: " + serverUrl, "color: cyan");
     socket = new WebSocket(serverUrl);
 
-    socket.onopen = () => console.log("%c Connesso al Server Railway ", "background: #004400; color: #fff;");
-    
+    socket.onopen = () => {
+        console.log("%c✅ Connesso al Server Railway", "background: #004400; color: #fff; padding: 5px;");
+    };
+
     socket.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data.type === "game_over") {
@@ -16,8 +22,10 @@ function connect() {
             return;
         }
         if (data.type === "error") { console.error("Errore Server:", data.msg); return; }
+        
         if (data.p_idx !== undefined) myPlayerIdx = data.p_idx;
         if (data.hand) {
+            // Aggiorna la mano locale solo se il numero di carte cambia (pesca/scarto)
             if (!localHandOrder || localHandOrder.length !== data.hand.length) {
                 localHandOrder = data.hand;
             }
@@ -25,12 +33,19 @@ function connect() {
         renderGame(data);
     };
 
-    socket.onclose = () => {
-        console.log("%c Connessione persa. Riconnessione in corso... ", "background: #440000; color: #fff;");
-        setTimeout(connect, 2000); // Tenta di riconnettersi ogni 2 secondi
+    socket.onclose = (e) => {
+        console.log("%c❌ Connessione persa.", "color: red");
+        // Se il primo tentativo fallisce, proviamo ad aggiungere /ws al prossimo tentativo
+        if (!serverUrl.endsWith('/ws')) {
+            serverUrl += '/ws';
+            console.log("Provo con il path alternativo: " + serverUrl);
+        }
+        setTimeout(connect, 3000); 
     };
 
-    socket.onerror = (err) => console.error("Errore WebSocket:", err);
+    socket.onerror = (err) => {
+        console.error("Errore WebSocket rilevato.");
+    };
 }
 
 connect();
@@ -38,8 +53,6 @@ connect();
 const suitsMap = { 'Ori': 'Denari', 'Bastoni': 'Bastoni', 'Coppe': 'Coppe', 'Spade': 'Spade' };
 const valuesMap = { 'F': '08', 'C': '09', 'R': '10' };
 
-let localHandOrder = null;
-let myPlayerIdx = null;
 let draggedElement = null;
 let touchStartX = 0;
 let touchStartY = 0;
@@ -48,31 +61,41 @@ const moveThreshold = 10;
 
 function renderGame(state) {
     if (!state.game_started) return;
-    document.getElementById('ready-btn')?.remove();
-    document.getElementById('score-me').innerText = `TU: ${state.scores[state.p_idx] || 0}`;
-    document.getElementById('score-opp').innerText = `AVV: ${state.scores[1 - state.p_idx] || 0}`;
+    
+    // Gestione punteggi
+    const me = document.getElementById('score-me');
+    const opp = document.getElementById('score-opp');
+    if (me) me.innerText = `TU: ${state.scores[myPlayerIdx] || 0}`;
+    if (opp) opp.innerText = `AVV: ${state.scores[1 - myPlayerIdx] || 0}`;
 
+    // Mano avversario
     const oppHand = document.getElementById('opponent-hand');
-    oppHand.innerHTML = '';
-    for (let i = 0; i < state.opp_count; i++) {
-        oppHand.appendChild(createCardElement(null, true));
+    if (oppHand) {
+        oppHand.innerHTML = '';
+        for (let i = 0; i < state.opp_count; i++) {
+            oppHand.appendChild(createCardElement(null, true));
+        }
     }
+
     renderTable(state);
     renderPlayerHand(state);
 }
 
 function renderPlayerHand(state) {
     const container = document.getElementById('player-hand');
+    if (!container) return;
     container.innerHTML = '';
+    
     const hand = localHandOrder || state.hand;
-    const isMyTurn = state.turn === state.p_idx;
-    const canAction = isMyTurn && state.hand.length === 8;
+    const isMyTurn = state.turn === myPlayerIdx;
+    const canAction = isMyTurn && hand.length === 8;
 
+    // Suggerimento per la chiusura in console
     if (canAction) {
-        console.group("%c 🃏 ANALISI MANO PER CHIUSURA ", "background: #800; color: #fff; font-weight: bold; padding: 4px;");
-        console.log("Mano attuale:", hand.map(c => `${c.v} di ${c.s}`).join(" | "));
-        const discardCandidate = hand[hand.length - 1]; // Assume l'ultima carta come scarto
-        console.log(`%c SUGGERIMENTO: Trascina il ${discardCandidate.v} di ${discardCandidate.s} nella zona 'CHIUDI'`, "color: #00ff00; font-weight: bold;");
+        console.group("%c🃏 ANALISI MANO", "background: #222; color: #bada55");
+        console.log("La tua mano:", hand.map(c => `${c.v} di ${c.s}`).join(" | "));
+        const scarto = hand[hand.length - 1];
+        console.log(`%cCONSIGLIO: Trascina il ${scarto.v} di ${scarto.s} in CHIUDI!`, "color: #ff0000; font-weight: bold;");
         console.groupEnd();
     }
 
@@ -81,6 +104,7 @@ function renderPlayerHand(state) {
         cardImg.classList.add('touchable-card');
         cardImg.dataset.index = index;
 
+        // Logica Touch (Drag & Drop)
         cardImg.addEventListener('touchstart', (e) => {
             draggedElement = cardImg;
             hasMoved = false;
@@ -106,30 +130,32 @@ function renderPlayerHand(state) {
             if (!draggedElement) return;
             const touch = e.changedTouches[0];
             const closeZone = document.getElementById('close-zone');
-            const rect = closeZone.getBoundingClientRect();
-            const droppedInClose = (
-                touch.clientX >= rect.left && touch.clientX <= rect.right &&
-                touch.clientY >= rect.top && touch.clientY <= rect.bottom
-            );
+            
+            let droppedInClose = false;
+            if (closeZone) {
+                const rect = closeZone.getBoundingClientRect();
+                droppedInClose = (
+                    touch.clientX >= rect.left && touch.clientX <= rect.right &&
+                    touch.clientY >= rect.top && touch.clientY <= rect.bottom
+                );
+            }
 
             if (hasMoved && droppedInClose && canAction) {
-                console.log("%c INVIO CHIUSURA CON:", "color: red;", card);
                 socket.send(JSON.stringify({action: "close", card: card}));
             } else if (!hasMoved && canAction) {
                 socket.send(JSON.stringify({action: "discard", card: card}));
             } else if (hasMoved) {
+                // Riordinamento manuale della mano
                 draggedElement.style.visibility = 'hidden';
                 const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
                 draggedElement.style.visibility = 'visible';
-                if (targetEl) {
-                    const targetCard = targetEl.closest('.touchable-card');
-                    if (targetCard && targetCard !== draggedElement) {
-                        const fromIdx = parseInt(draggedElement.dataset.index);
-                        const toIdx = parseInt(targetCard.dataset.index);
-                        [hand[fromIdx], hand[toIdx]] = [hand[toIdx], hand[fromIdx]];
-                        localHandOrder = [...hand];
-                        renderPlayerHand(state);
-                    }
+                const targetCard = targetEl?.closest('.touchable-card');
+                if (targetCard && targetCard !== draggedElement) {
+                    const fromIdx = parseInt(draggedElement.dataset.index);
+                    const toIdx = parseInt(targetCard.dataset.index);
+                    [hand[fromIdx], hand[toIdx]] = [hand[toIdx], hand[fromIdx]];
+                    localHandOrder = [...hand];
+                    renderPlayerHand(state);
                 }
             }
             draggedElement.style.zIndex = "";
@@ -143,25 +169,27 @@ function renderPlayerHand(state) {
 function renderTable(state) {
     const deckImg = document.getElementById('deck-img');
     const discardPile = document.getElementById('discard-pile');
-    const isMyTurn = state.turn === state.p_idx;
-    if (deckImg) deckImg.onclick = () => { if (isMyTurn && state.hand.length === 7) socket.send(JSON.stringify({action: "draw_deck"})); };
+    const isMyTurn = state.turn === myPlayerIdx;
+
+    if (deckImg) {
+        deckImg.onclick = () => { 
+            if (isMyTurn && state.hand.length === 7) socket.send(JSON.stringify({action: "draw_deck"})); 
+        };
+    }
     if (discardPile) {
         discardPile.innerHTML = '';
         if (state.top_discard) {
-            const topDiscard = createCardElement(state.top_discard);
-            topDiscard.onclick = () => { if (isMyTurn && state.hand.length === 7) socket.send(JSON.stringify({action: "draw_discard"})); };
-            discardPile.appendChild(topDiscard);
+            const topCard = createCardElement(state.top_discard);
+            topCard.onclick = () => { 
+                if (isMyTurn && state.hand.length === 7) socket.send(JSON.stringify({action: "draw_discard"})); 
+            };
+            discardPile.appendChild(topCard);
         }
     }
 }
 
 function renderFinalView(data) {
     const oppIdx = 1 - myPlayerIdx;
-    const oppHandContainer = document.getElementById('opponent-hand');
-    oppHandContainer.innerHTML = '';
-    if (data.all_hands && data.all_hands[oppIdx]) {
-        data.all_hands[oppIdx].forEach(card => oppHandContainer.appendChild(createCardElement(card)));
-    }
     const winMsg = data.winner === myPlayerIdx ? "HAI VINTO IL ROUND! 🏆" : "L'AVVERSARIO HA CHIUSO! ❌";
     alert(`${winMsg}\n\nPunteggio Finale:\nTU: ${data.total_scores[myPlayerIdx]}\nAVVERSARIO: ${data.total_scores[oppIdx]}`);
 }
@@ -170,11 +198,12 @@ function showReadyButton() {
     if (document.getElementById('ready-btn')) return;
     const btn = document.createElement('button');
     btn.id = 'ready-btn';
-    btn.innerText = "PROSSIMO ROUND";
+    btn.innerText = "GIOCA PROSSIMO ROUND";
     btn.style = "position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); padding: 20px 40px; font-size: 1.5rem; background: #28a745; color: white; border: none; border-radius: 12px; z-index: 9999; cursor: pointer;";
     btn.onclick = () => {
         socket.send(JSON.stringify({action: "ready_next_round"}));
-        btn.innerText = "ATTESA...";
+        btn.innerText = "IN ATTESA...";
+        btn.style.background = "#6c757d";
         btn.disabled = true;
     };
     document.body.appendChild(btn);
@@ -183,8 +212,9 @@ function showReadyButton() {
 function createCardElement(card, isBack = false) {
     const img = document.createElement('img');
     img.className = 'card';
-    if (isBack) img.src = 'assets/Dorso.png';
-    else {
+    if (isBack) {
+        img.src = 'assets/Dorso.png';
+    } else {
         const v = card.v.toString();
         const vStr = valuesMap[v] || v.padStart(2, '0');
         const sStr = suitsMap[card.s] || card.s;
