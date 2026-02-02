@@ -1,48 +1,54 @@
 const RAILWAY_DOMAIN = 'web-production-1a2e.up.railway.app'; 
-//web-production-1a2e.up.railway.app
-//const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-const isLocal = false;
+const isLocal = false; // Impostato su false per usare Railway
 const serverUrl = isLocal ? 'ws://localhost:5555' : `wss://${RAILWAY_DOMAIN}`;
-let socket = new WebSocket(serverUrl);
+
+let socket;
+function connect() {
+    socket = new WebSocket(serverUrl);
+
+    socket.onopen = () => console.log("%c Connesso al Server Railway ", "background: #004400; color: #fff;");
+    
+    socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === "game_over") {
+            renderFinalView(data);
+            showReadyButton();
+            return;
+        }
+        if (data.type === "error") { console.error("Errore Server:", data.msg); return; }
+        if (data.p_idx !== undefined) myPlayerIdx = data.p_idx;
+        if (data.hand) {
+            if (!localHandOrder || localHandOrder.length !== data.hand.length) {
+                localHandOrder = data.hand;
+            }
+        }
+        renderGame(data);
+    };
+
+    socket.onclose = () => {
+        console.log("%c Connessione persa. Riconnessione in corso... ", "background: #440000; color: #fff;");
+        setTimeout(connect, 2000); // Tenta di riconnettersi ogni 2 secondi
+    };
+
+    socket.onerror = (err) => console.error("Errore WebSocket:", err);
+}
+
+connect();
 
 const suitsMap = { 'Ori': 'Denari', 'Bastoni': 'Bastoni', 'Coppe': 'Coppe', 'Spade': 'Spade' };
 const valuesMap = { 'F': '08', 'C': '09', 'R': '10' };
 
 let localHandOrder = null;
 let myPlayerIdx = null;
-
 let draggedElement = null;
 let touchStartX = 0;
 let touchStartY = 0;
 let hasMoved = false;
 const moveThreshold = 10; 
 
-socket.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-
-    if (data.type === "game_over") {
-        renderFinalView(data);
-        showReadyButton();
-        return;
-    }
-
-    if (data.type === "error") { console.error("Errore Server:", data.msg); return; }
-    if (data.p_idx !== undefined) myPlayerIdx = data.p_idx;
-    
-    if (data.hand) {
-        if (!localHandOrder || localHandOrder.length !== data.hand.length) {
-            localHandOrder = data.hand;
-        }
-    }
-    renderGame(data);
-};
-
 function renderGame(state) {
     if (!state.game_started) return;
-    
-    // Rimuove il tasto per il round successivo se il gioco è ripartito
     document.getElementById('ready-btn')?.remove();
-
     document.getElementById('score-me').innerText = `TU: ${state.scores[state.p_idx] || 0}`;
     document.getElementById('score-opp').innerText = `AVV: ${state.scores[1 - state.p_idx] || 0}`;
 
@@ -51,7 +57,6 @@ function renderGame(state) {
     for (let i = 0; i < state.opp_count; i++) {
         oppHand.appendChild(createCardElement(null, true));
     }
-
     renderTable(state);
     renderPlayerHand(state);
 }
@@ -63,16 +68,11 @@ function renderPlayerHand(state) {
     const isMyTurn = state.turn === state.p_idx;
     const canAction = isMyTurn && state.hand.length === 8;
 
-    // --- LOGICA DI ANALISI MANO IN CONSOLE ---
     if (canAction) {
-        console.group("%c 🃏 ANALISI MANO DISPONIBILE ", "background: #800; color: #fff; font-weight: bold; padding: 4px;");
-        const handSummary = hand.map(c => `${c.v} di ${c.s}`).join(" | ");
-        console.log("Le tue carte:", handSummary);
-        
-        // Suggeriamo l'ultima carta della mano come scarto per chiudere
-        const discardCandidate = hand[hand.length - 1];
-        console.log(`%c CARTA DA SCARTARE PER CHIUDERE: ${discardCandidate.v} di ${discardCandidate.s}`, "color: #00ff00; font-size: 14px; font-weight: bold;");
-        console.log("👉 Trascina questa carta nel rettangolo rosso 'CHIUDI' sopra la tua mano.");
+        console.group("%c 🃏 ANALISI MANO PER CHIUSURA ", "background: #800; color: #fff; font-weight: bold; padding: 4px;");
+        console.log("Mano attuale:", hand.map(c => `${c.v} di ${c.s}`).join(" | "));
+        const discardCandidate = hand[hand.length - 1]; // Assume l'ultima carta come scarto
+        console.log(`%c SUGGERIMENTO: Trascina il ${discardCandidate.v} di ${discardCandidate.s} nella zona 'CHIUDI'`, "color: #00ff00; font-weight: bold;");
         console.groupEnd();
     }
 
@@ -105,7 +105,6 @@ function renderPlayerHand(state) {
         cardImg.addEventListener('touchend', (e) => {
             if (!draggedElement) return;
             const touch = e.changedTouches[0];
-            
             const closeZone = document.getElementById('close-zone');
             const rect = closeZone.getBoundingClientRect();
             const droppedInClose = (
@@ -114,13 +113,11 @@ function renderPlayerHand(state) {
             );
 
             if (hasMoved && droppedInClose && canAction) {
-                console.log("%c INVIO CHIUSURA...", "color: red;");
+                console.log("%c INVIO CHIUSURA CON:", "color: red;", card);
                 socket.send(JSON.stringify({action: "close", card: card}));
             } else if (!hasMoved && canAction) {
-                // Semplice scarto senza chiudere
                 socket.send(JSON.stringify({action: "discard", card: card}));
             } else if (hasMoved) {
-                // Scambio posizione carte
                 draggedElement.style.visibility = 'hidden';
                 const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
                 draggedElement.style.visibility = 'visible';
@@ -147,19 +144,12 @@ function renderTable(state) {
     const deckImg = document.getElementById('deck-img');
     const discardPile = document.getElementById('discard-pile');
     const isMyTurn = state.turn === state.p_idx;
-
-    if (deckImg) {
-        deckImg.onclick = () => { 
-            if (isMyTurn && state.hand.length === 7) socket.send(JSON.stringify({action: "draw_deck"})); 
-        };
-    }
+    if (deckImg) deckImg.onclick = () => { if (isMyTurn && state.hand.length === 7) socket.send(JSON.stringify({action: "draw_deck"})); };
     if (discardPile) {
         discardPile.innerHTML = '';
         if (state.top_discard) {
             const topDiscard = createCardElement(state.top_discard);
-            topDiscard.onclick = () => { 
-                if (isMyTurn && state.hand.length === 7) socket.send(JSON.stringify({action: "draw_discard"})); 
-            };
+            topDiscard.onclick = () => { if (isMyTurn && state.hand.length === 7) socket.send(JSON.stringify({action: "draw_discard"})); };
             discardPile.appendChild(topDiscard);
         }
     }
@@ -167,17 +157,12 @@ function renderTable(state) {
 
 function renderFinalView(data) {
     const oppIdx = 1 - myPlayerIdx;
-    
-    // Mostra la mano dell'avversario a fine round
     const oppHandContainer = document.getElementById('opponent-hand');
     oppHandContainer.innerHTML = '';
     if (data.all_hands && data.all_hands[oppIdx]) {
         data.all_hands[oppIdx].forEach(card => oppHandContainer.appendChild(createCardElement(card)));
     }
-
     const winMsg = data.winner === myPlayerIdx ? "HAI VINTO IL ROUND! 🏆" : "L'AVVERSARIO HA CHIUSO! ❌";
-    
-    // Alert con i punti totali
     alert(`${winMsg}\n\nPunteggio Finale:\nTU: ${data.total_scores[myPlayerIdx]}\nAVVERSARIO: ${data.total_scores[oppIdx]}`);
 }
 
@@ -185,29 +170,11 @@ function showReadyButton() {
     if (document.getElementById('ready-btn')) return;
     const btn = document.createElement('button');
     btn.id = 'ready-btn';
-    btn.innerText = "CLICCA PER IL PROSSIMO ROUND";
-    
-    // Stile CSS direttamente nel JS per sicurezza
-    btn.style = `
-        position: fixed; 
-        bottom: 30px; 
-        left: 50%; 
-        transform: translateX(-50%); 
-        padding: 20px 40px; 
-        font-size: 1.5rem; 
-        background: #28a745; 
-        color: white; 
-        border: none; 
-        border-radius: 12px; 
-        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-        z-index: 9999;
-        cursor: pointer;
-    `;
-    
+    btn.innerText = "PROSSIMO ROUND";
+    btn.style = "position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); padding: 20px 40px; font-size: 1.5rem; background: #28a745; color: white; border: none; border-radius: 12px; z-index: 9999; cursor: pointer;";
     btn.onclick = () => {
         socket.send(JSON.stringify({action: "ready_next_round"}));
-        btn.innerText = "ATTESA AVVERSARIO...";
-        btn.style.background = "#6c757d";
+        btn.innerText = "ATTESA...";
         btn.disabled = true;
     };
     document.body.appendChild(btn);
@@ -216,9 +183,8 @@ function showReadyButton() {
 function createCardElement(card, isBack = false) {
     const img = document.createElement('img');
     img.className = 'card';
-    if (isBack) {
-        img.src = 'assets/Dorso.png';
-    } else {
+    if (isBack) img.src = 'assets/Dorso.png';
+    else {
         const v = card.v.toString();
         const vStr = valuesMap[v] || v.padStart(2, '0');
         const sStr = suitsMap[card.s] || card.s;
