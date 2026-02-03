@@ -161,3 +161,16 @@ body {
     box-shadow: 0 4px 15px rgba(0,0,0,0.4);
     cursor: pointer;
 }
+
+/* Carte che fanno combinazione a fine round */
+.meld-card {
+    opacity: 0.6;
+    filter: grayscale(30%);
+    transform: scale(0.95);
+    border: 2px solid #ffeb3b;
+}
+
+/* Assicurati che le mani scoperte siano ben visibili */
+#opponent-hand, #player-hand {
+    transition: all 0.5s ease;
+}

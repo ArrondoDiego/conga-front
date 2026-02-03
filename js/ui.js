@@ -41,5 +41,12 @@ export const UI = {
         btn.className = 'ready-button-overlay';
         btn.onclick = callback;
         document.body.appendChild(btn);
+    },
+
+    analyzeHandLog(state) {
+        if (!state.hand) return;
+        console.clear(); // Pulisce la console a ogni turno per leggibilità
+        console.log("%c MANO GIOCATORE ", "background: #2ecc71; color: white; font-weight: bold;");
+        console.table(state.hand.map(c => ({ Valore: c.v, Seme: c.s })));
     }
 };
