@@ -161,16 +161,38 @@ body {
     box-shadow: 0 4px 15px rgba(0,0,0,0.4);
     cursor: pointer;
 }
-
-/* Carte che fanno combinazione a fine round */
-.meld-card {
-    opacity: 0.6;
-    filter: grayscale(30%);
-    transform: scale(0.95);
-    border: 2px solid #ffeb3b;
-}
-
 /* Assicurati che le mani scoperte siano ben visibili */
 #opponent-hand, #player-hand {
     transition: all 0.5s ease;
+}
+
+#opponent-hand {
+    position: relative; /* Cambiato da absolute a relative per stare nel flusso del board */
+    margin-top: 30px;    /* Spazio dal bordo superiore */
+    display: flex;
+    justify-content: center;
+    gap: -40px;          /* Sovrapposizione delle carte (regola a piacimento) */
+    z-index: 10;
+    width: 100%;
+}
+
+#opponent-hand .card {
+    margin-top: 0;
+    transform: scale(0.9); /* Opzionale: rende le carte avversario leggermente più piccole */
+}
+
+/* Aggiunta per l'effetto meld a fine round */
+.meld-card {
+    opacity: 0.6;
+    transform: translateY(10px);
+}
+
+
+/* Modifica questa parte nel tuo CSS */
+.area-player {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    /* Rimuovi eventuali posizionamenti assoluti dai figli diretti se necessario */
 }

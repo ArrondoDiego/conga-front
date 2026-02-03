@@ -6,7 +6,11 @@ let myPlayerIdx = null;
 let localHandOrder = null;
 let draggedElement = null;
 let touchState = { startX: 0, startY: 0, hasMoved: false };
-let isShowingResults = false; // Stato per gestire la visualizzazione a fine round
+let isShowingResults = false;
+
+// Audio Effects - Assicurati che i file esistano nella cartella musica
+const audioRussia = new Audio('./sound/russia.mpeg');
+// const audioGatto = new Audio('../musica/gatto.mp3');
 
 function init() {
     initSocket((data) => {
@@ -16,34 +20,67 @@ function init() {
             return;
         }
 
-        // Assegnazione indice giocatore (0 o 1)
         if (data.p_idx !== undefined) myPlayerIdx = data.p_idx;
         
-        // Se riceviamo un sync e il gioco è ricominciato, resettiamo la visualizzazione risultati
+        // Reset flag risultati se il gioco ricomincia
         if (data.type === "sync" && data.game_started && isShowingResults) {
             isShowingResults = false;
         }
 
-        // Sincronizzazione ordine locale carte
+        // Trigger audio per doppia pesca scarti (notifica dal server)
+        if (data.effect === "russia" || data.effect === "double_discard_draw") {
+            audioRussia.play().catch(e => console.log("Audio play blocked"));
+        }
+
+        // Gestione sincronizzazione mano e ordinamento locale
         if (data.hand && !isShowingResults) {
             if (!localHandOrder || localHandOrder.length !== data.hand.length) {
                 localHandOrder = [...data.hand];
             } else {
+                // Aggiorna i dati delle carte mantenendo l'ordine visuale dell'utente
                 localHandOrder = localHandOrder.map(localCard => 
                     data.hand.find(serverCard => serverCard.s === localCard.s && serverCard.v === localCard.v) || localCard
                 );
             }
         }
         
-        // Renderizza il gioco solo se non siamo nella schermata dei risultati finali
-        if (!isShowingResults) {
-            renderGame(data);
-        }
+        if (!isShowingResults) renderGame(data);
     });
 }
 
+/**
+ * Analisi della mano per suggerire tris o scale in console
+ */
+function debugHandAnalysis(hand) {
+    console.clear();
+    console.log("%c --- ANALISI MANO ATTUALE --- ", "background: #2ecc71; color: white; padding: 2px 5px;");
+    
+    // Raggruppa per valore (Tris/Poker)
+    const values = {};
+    hand.forEach(c => values[c.v] = (values[c.v] || 0) + 1);
+    const potentialSets = Object.keys(values).filter(v => values[v] >= 3);
+    if (potentialSets.length > 0) console.log("Combinazioni (Tris/Poker):", potentialSets.join(", "));
+
+    // Raggruppa per seme (Scale)
+    const suits = { 'Denari': [], 'Bastoni': [], 'Coppe': [], 'Spade': [] };
+    hand.forEach(c => suits[c.s].push(parseInt(c.v)));
+    
+    Object.keys(suits).forEach(s => {
+        const vList = suits[s].sort((a, b) => a - b);
+        let count = 1;
+        for (let i = 1; i < vList.length; i++) {
+            if (vList[i] === vList[i-1] + 1) count++;
+            else {
+                if (count >= 3) console.log(`Scala di ${s} trovata!`);
+                count = 1;
+            }
+        }
+        if (count >= 3) console.log(`Scala di ${s} trovata!`);
+    });
+    console.table(hand.map(c => ({ Valore: c.v, Seme: c.s })));
+}
+
 function renderGame(state) {
-    // Se il gioco non è iniziato, mostra il tasto pronto
     if (!state.game_started) {
         UI.renderReadyButton(() => {
             localHandOrder = null;
@@ -53,141 +90,64 @@ function renderGame(state) {
     }
     
     document.getElementById('ready-btn')?.remove();
-
     const turnEl = document.getElementById('turn-info');
     if (turnEl) {
         turnEl.textContent = state.turn === myPlayerIdx ? "TUO TURNO" : "TURNO AVVERSARIO";
         turnEl.className = state.turn === myPlayerIdx ? "my-turn" : "opp-turn";
     }
 
-    //UI.renderScore(state.scores, myPlayerIdx);
-
+    UI.renderScore(state.scores, myPlayerIdx);
     const isMyTurn = state.turn === myPlayerIdx;
     const canDraw = isMyTurn && state.hand.length === 7;
 
-    const deckCountEl = document.getElementById('deck-count');
-    if (deckCountEl) deckCountEl.textContent = state.deck_count;
-
-    const deckImg = document.getElementById('deck-img');
-    if (deckImg) {
-        deckImg.onclick = () => { if (canDraw) sendAction("draw_deck"); };
-    }
+    document.getElementById('deck-count').textContent = state.deck_count;
+    document.getElementById('deck-img').onclick = () => { if (canDraw) sendAction("draw_deck"); };
 
     const discardPile = document.getElementById('discard-pile');
-    if (discardPile) {
-        discardPile.innerHTML = '';
-        if (state.top_discard) {
-            const top = UI.createCardElement(state.top_discard);
-            top.onclick = () => { if (canDraw) sendAction("draw_discard"); };
-            discardPile.appendChild(top);
-        }
+    discardPile.innerHTML = '';
+    if (state.top_discard) {
+        const top = UI.createCardElement(state.top_discard);
+        top.onclick = () => { if (canDraw) sendAction("draw_discard"); };
+        discardPile.appendChild(top);
     }
 
     renderOpponentHand(state.opp_count);
     renderPlayerHand(state);
 }
 
-function renderOpponentHand(count) {
-    const container = document.getElementById('opponent-hand');
-    if (!container) return;
-    container.innerHTML = '';
-    for (let i = 0; i < count; i++) {
-        container.appendChild(UI.createCardElement(null, true));
-    }
-}
-
 function renderPlayerHand(state) {
     const container = document.getElementById('player-hand');
-    if (!container) return;
-    
     container.innerHTML = '';
     const hand = localHandOrder || state.hand;
     const isMyTurn = state.turn === myPlayerIdx;
 
-    if (isMyTurn && !isShowingResults) {
-        debugHandAnalysis(hand);
-    }
-    
+    if (isMyTurn && !isShowingResults) debugHandAnalysis(hand);
+
     hand.forEach((card, index) => {
         const img = UI.createCardElement(card);
         img.classList.add('touchable-card');
         img.dataset.index = index;
-        
         setupTouchEvents(img, card, state, isMyTurn);
         container.appendChild(img);
     });
-    UI.analyzeHandLog(state);
 }
 
-/**
- * Mostra le mani scoperte di entrambi i giocatori applicando l'opacità
- * alle carte che fanno parte di una combinazione (meld).
- */
-function showFinalHands(data) {
-    isShowingResults = true;
-    const oppIdx = 1 - myPlayerIdx;
-    
-    // 1. Mostra mano avversario scoperta
-    const oppContainer = document.getElementById('opponent-hand');
-    if (oppContainer && data.hands_at_end) {
-        oppContainer.innerHTML = '';
-        const oppData = data.hands_at_end[oppIdx];
-        oppData.cards.forEach(card => {
-            const img = UI.createCardElement(card);
-            const isMeld = oppData.melds.some(m => m.s === card.s && m.v === card.v);
-            if (isMeld) img.classList.add('meld-card');
-            oppContainer.appendChild(img);
-        });
+function renderOpponentHand(count) {
+    const container = document.getElementById('opponent-hand');
+    container.innerHTML = '';
+    for (let i = 0; i < count; i++) {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.style.backgroundImage = "url('assets/Dorso.png')";
+        container.appendChild(card);
     }
-
-    // 2. Mostra la propria mano scoperta
-    const myContainer = document.getElementById('player-hand');
-    if (myContainer && data.hands_at_end) {
-        myContainer.innerHTML = '';
-        const myData = data.hands_at_end[myPlayerIdx];
-        myData.cards.forEach(card => {
-            const img = UI.createCardElement(card);
-            const isMeld = myData.melds.some(m => m.s === card.s && m.v === card.v);
-            if (isMeld) img.classList.add('meld-card');
-            myContainer.appendChild(img);
-        });
-    }
-}
-
-function handleGameOver(data) {
-    console.log("Fine Round. Risultati:", data);
-
-    const isMe = data.winner === myPlayerIdx;
-    const winMsg = isMe ? "CONGA! Hai vinto il round! 🏆" : "L'avversario ha chiuso! ❌";
-    
-    const punteggiTotali = data.total_scores || [0, 0];
-    UI.renderScore(punteggiTotali, myPlayerIdx);
-
-    // Rivela le carte prima di mostrare l'alert
-    showFinalHands(data);
-
-    setTimeout(() => {
-        const mioTotale = punteggiTotali[myPlayerIdx];
-        const oppTotale = punteggiTotali[1 - myPlayerIdx];
-        
-        // Punti fatti nel round specifico
-        const p0_round = data.p0_points || 0;
-        const p1_round = data.p1_points || 0;
-        const mieiPuntiRound = myPlayerIdx === 0 ? p0_round : p1_round;
-        const oppPuntiRound = myPlayerIdx === 0 ? p1_round : p0_round;
-
-        alert(`${winMsg}\n\nPunti Round: Tu ${mieiPuntiRound} - Avv ${oppPuntiRound}\nTotale Partita: Tu ${mioTotale} - Avv ${oppTotale}`);
-        
-        localHandOrder = null;
-        UI.renderReadyButton(() => sendAction("ready_next_round"));
-    }, 1000);
 }
 
 function setupTouchEvents(img, card, state, isMyTurn) {
     const canAction = isMyTurn && (state.hand.length === 8);
 
     img.addEventListener('touchstart', (e) => {
-        if (isShowingResults) return; // Disabilita drag se il round è finito
+        if (isShowingResults) return;
         draggedElement = img;
         touchState.hasMoved = false;
         touchState.startX = e.touches[0].clientX;
@@ -235,7 +195,7 @@ function handleTouchEnd(e, card, canAction, state) {
         if (inCloseZone && canAction) {
             sendAction("close", { card });
         } else {
-            // Logica Scambio Carte Locale
+            // Scambio posizioni locale
             draggedElement.style.visibility = 'hidden';
             const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
             draggedElement.style.visibility = 'visible';
@@ -249,47 +209,34 @@ function handleTouchEnd(e, card, canAction, state) {
             renderPlayerHand(state);
         }
     } else if (canAction) {
+        // Tap semplice: Scarta carta
         sendAction("discard", { card });
     }
 }
 
-function debugHandAnalysis(hand) {
-    console.log("--- ANALISI MANO ATTUALE ---");
-    const handStr = hand.map(c => `${c.v}${c.s[0]}`).join(", ");
-    console.log("Carte:", handStr);
-
-    // Raggruppa per valore (per Tris/Poker)
-    const values = {};
-    hand.forEach(c => {
-        values[c.v] = (values[c.v] || 0) + 1;
-    });
-
-    const potentialSets = Object.keys(values).filter(v => values[v] >= 3);
-    if (potentialSets.length > 0) {
-        console.log("Combinazioni (Tris/Poker) trovate:", potentialSets);
+function handleGameOver(data) {
+    isShowingResults = true;
+    const isMe = data.winner === myPlayerIdx;
+    
+    // Suono Gatto se chiusura immediata (Conga!)
+    if (data.instant_win) {
+        //.play().catch(e => console.log("Audio play blocked"));
     }
 
-    // Raggruppa per seme (per Scale)
-    const suits = { 'Denari': [], 'Bastoni': [], 'Coppe': [], 'Spade': [] };
-    hand.forEach(c => suits[c.s].push(parseInt(c.v)));
+    // Qui potresti chiamare una funzione per mostrare le carte dell'avversario sul tavolo
     
-    Object.keys(suits).forEach(s => {
-        const vList = suits[s].sort((a, b) => a - b);
-        if (vList.length >= 3) {
-            // Controllo sequenza minima di 3
-            let count = 1;
-            for (let i = 1; i < vList.length; i++) {
-                if (vList[i] === vList[i-1] + 1) {
-                    count++;
-                } else {
-                    if (count >= 3) console.log(`Potenziale Scala di ${s} trovata!`);
-                    count = 1;
-                }
-            }
-            if (count >= 3) console.log(`Potenziale Scala di ${s} trovata!`);
-        }
-    });
-    console.log("----------------------------");
+    setTimeout(() => {
+        const winMsg = isMe ? "CONGA! 🏆" : "L'avversario ha chiuso! ❌";
+        const p0 = data.p0_points || 0;
+        const p1 = data.p1_points || 0;
+        alert(`${winMsg}\n\nPunti Round: Tu ${myPlayerIdx === 0 ? p0 : p1} - Avv ${myPlayerIdx === 0 ? p1 : p0}`);
+        
+        localHandOrder = null;
+        UI.renderReadyButton(() => {
+            isShowingResults = false;
+            sendAction("ready_next_round");
+        });
+    }, 800);
 }
 
 init();
