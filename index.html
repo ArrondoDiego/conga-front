@@ -7,27 +7,35 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="game-container">
-        <div id="opponent-hand" class="card-zone"></div>
 
-        <div id="table-center">
-            <div id="deck" class="card-slot">
-                <img src="assets/Dorso.png" id="deck-img">
+    <div id="game-board">
+        <div id="turn-info">In attesa di altri giocatori...</div>
+
+        <div class="area-player opp">
+            <div id="opponent-hand" class="hand-container"></div>
+            <div class="score-label">Avversario: <span id="score-opp">0</span></div>
+        </div>
+        
+        <div id="center-area">
+            <div id="deck-container">
+                <img src="assets/Dorso.png" id="deck-img" alt="Mazzo">
+                <div id="deck-count">40</div>
             </div>
-            <div id="discard-pile" class="card-slot"></div>
-            <div id="close-zone" class="card-slot">
-                <div id="close-label">CHIUDI QUI</div>
+
+            <div id="discard-pile" class="card-slot">
+                </div>
+
+            <div id="close-zone">
+                <span>CHIUDI QUI</span>
             </div>
         </div>
 
-        <div id="player-hand" class="card-zone"></div>
-        
-        <div id="ui-overlay">
-            <div id="score-me">TU: 0</div>
-            <div id="status-text">In attesa...</div>
-            <div id="score-opp">AVV: 0</div>
+        <div class="area-player me">
+            <div class="score-label">Tu: <span id="score-me">0</span></div>
+            <div id="player-hand" class="hand-container"></div>
         </div>
     </div>
-    <script src="game.js"></script>
+
+    <script type="module" src="js/games.js"></script>
 </body>
 </html>
